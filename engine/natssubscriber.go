@@ -3,8 +3,8 @@ package engine
 import (
 	"errors"
 
-	glog "github.com/glog-master"
-	nats "github.com/nats-io/nats"
+	glog "github.com/golang/glog"
+	nats "github.com/nats-io/nats.go"
 )
 
 //NatsSubscriber - structure for creating nats subscriber instance

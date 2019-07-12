@@ -3,7 +3,7 @@ package engine
 import (
 	"strings"
 
-	glog "github.com/glog-master"
+	glog "github.com/golang/glog"
 	inireader "github.com/go-ini/ini"
 )
 

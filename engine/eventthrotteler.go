@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	glog "github.com/glog-master"
+	glog "github.com/golang/glog"
 )
 
 //Throttler - structure to create throttler for event engine

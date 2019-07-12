@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	natscore "github.com/nats-io/gnatsd/server"
+	nserv "github.com/nats-io/nats-server/v2/server"
 )
 
 const username = "astra"
 const clusteruser = "astraclusteradmin"
 
 //DefaultOptions - used to start the server with default options
-var DefaultOptions = natscore.Options{
+var DefaultOptions = nserv.Options{
 	Host:               getIPAddress(),
 	Port:               4242,
 	HTTPPort:           8222,
@@ -28,17 +28,19 @@ var DefaultOptions = natscore.Options{
 	Username:           username,
 	Password:           getdefaultpwd(getIPAddress()),
 	AuthTimeout:        1,
-	ClusterHost:        getIPAddress(),
-	ClusterPort:        4244,
-	ClusterUsername:    clusteruser,
-	ClusterPassword:    getclusterdefaultpwd(getIPAddress()),
-	ClusterAuthTimeout: 0.5,
+	Cluster:						nserv.ClusterOpts{
+		Host:           getIPAddress(),
+		Port:						4244,
+		Username:       clusteruser,
+		Password:				getclusterdefaultpwd(getIPAddress()),
+		AuthTimeout:     0.5,
+	},
 }
 
 //NatsCoreServer - Struct used to hold nats configuration
 type NatsCoreServer struct {
-	Options          *natscore.Options
-	core             *natscore.Server
+	Options          *nserv.Options
+	core             *nserv.Server
 	MinSubscriptions uint32 //This is newly included to support auto recovery and detect failed subscriptions - JP
 }
 
@@ -115,26 +117,26 @@ func (server *NatsCoreServer) Getoptions(port int,
 	profport int,
 	maxconnections int,
 	hostname string,
-	ethname string) *natscore.Options {
+	ethname string) *nserv.Options {
 	options := &DefaultOptions
 	options.Port = port
 	options.HTTPPort = httpport
-	options.ClusterPort = clusterport
+	options.Cluster.Port = clusterport
 	options.ProfPort = profport
 	options.MaxConn = maxconnections
 	if len(hostname) > 0 {
 		options.Host = hostname
-		options.ClusterHost = hostname
+		options.Cluster.Host = hostname
 		options.Password = getdefaultpwd(hostname)
-		options.ClusterPassword = getclusterdefaultpwd(hostname)
+		options.Cluster.Password = getclusterdefaultpwd(hostname)
 	}
 	if len(ethname) > 0 {
 		host := getIP4Address(ethname)
 		if len(host) > 0 {
 			options.Host = host
-			options.ClusterHost = host
+			options.Cluster.Host = host
 			options.Password = getdefaultpwd(host)
-			options.ClusterPassword = getclusterdefaultpwd(host)
+			options.Cluster.Password = getclusterdefaultpwd(host)
 		}
 	}
 	return options
@@ -173,7 +175,7 @@ func (server *NatsCoreServer) StartNatsCore() bool {
 	if server == nil {
 		server.Options = &DefaultOptions
 	}
-	server.core = natscore.New(server.Options)
+	server.core = nserv.New(server.Options)
 	if server.core == nil {
 		panic("Could not start RPC engine")
 	}
@@ -185,7 +187,8 @@ func (server *NatsCoreServer) StartNatsCore() bool {
 func (server *NatsCoreServer) IsRunning() bool {
 	end := time.Now().Add(10 * time.Second)
 	for time.Now().Before(end) {
-		addr := server.core.GetListenEndpoint()
+		addr := net.JoinHostPort(server.Options.Host, strconv.Itoa(server.Options.Port))
+		//addr := server.core.GetListenEndpoint()
 		if addr == "" {
 			time.Sleep(10 * time.Millisecond)
 			// Retry. We might take a little while to open a connection.

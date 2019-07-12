@@ -12,7 +12,7 @@ import (
 
 	http "net/http"
 
-	glog "github.com/glog-master"
+	glog "github.com/golang/glog"
 	inireader "github.com/go-ini/ini"
 )
 
@@ -43,7 +43,7 @@ type coreEngine struct {
 type coreProcessingUnit struct {
 	publisher         *NatsPublisher
 	subscriber        *NatsSubscriber
-	walstore          *RocksDBInstance
+	walstore          *EventDB
 	throttler         *Throttler
 	stagename         string
 	thsafe            *sync.Mutex
@@ -284,13 +284,13 @@ func initializeSubscriber(natsEngineRouteConfig *NatsEngineRouteConfig, serverur
 }
 
 //initializeWal - function to initialize wal for core processing unit
-func initializeWal(natsEngineRouteConfig *NatsEngineRouteConfig) *RocksDBInstance {
+func initializeWal(natsEngineRouteConfig *NatsEngineRouteConfig) *EventDB {
 	//Create WAL for publisher
 	if len(natsEngineRouteConfig.Name) > 0 {
-		wal := new(RocksDBInstance)
+		wal := new(EventDB)
 		wal.Name = natsEngineRouteConfig.Wal.Name
 		wal.Datapath = natsEngineRouteConfig.Wal.Datapath
-		err := wal.ConnectRocksDB()
+		err := wal.OpenDB()
 		if err != nil {
 			glog.Errorf("Failed while creating Wal with name: %s\n", wal.Name)
 			panic("Failed while creating event engine")
@@ -471,10 +471,10 @@ func shutdownNATSSubscriber(subscriber *NatsSubscriber) {
 }
 
 //shutdownWalStore - function to shutdown WAL store
-func shutdownWalStore(wal *RocksDBInstance) {
+func shutdownWalStore(wal *EventDB) {
 	glog.Infof("Starting to shutdown of WAL: %s", wal.Name)
 	if wal != nil {
-		wal.Err = wal.CloseRocksDB()
+		wal.Err = wal.CloseDB()
 		if wal.Err != nil {
 			glog.Errorf("Shutting down of wal %s failed with Error: %s\n", wal.Name, wal.Err)
 		} else {
@@ -531,7 +531,7 @@ func (processingUnit *coreProcessingUnit) processAckevent(kv string, engine *Eve
 			return err
 		}
 		//flag, err := processingUnit.walstore.DeletefromRocksDB(key)
-		_, err = processingUnit.walstore.DeletefromRocksDB(key)
+		_, err = processingUnit.walstore.DeleteFromDB(key)
 		if err != nil {
 			glog.Errorf("Failed to delete events from RocksDB. Err: %s\n", err)
 			return err
@@ -572,7 +572,7 @@ func (core *coreEngine) processNextStage(key string, event string, seq string, c
 	if currentRoute != nil {
 		if currentRoute.Nextstage != nil {
 			//need to check if key exists in rocks db - to avoid duplication. If not in rocks assume that as duplicate
-			val, err := core.processingUnit[currentRoute.Stagename].walstore.ReadfromRocksDB(key)
+			val, err := core.processingUnit[currentRoute.Stagename].walstore.ReadFromDB(key)
 			if err != nil {
 				glog.Errorf("Failed to read ack key from wal. Current stage [%s]. Err: %s\n", currentRoute.Stagename, err)
 				return err
@@ -608,7 +608,7 @@ func (processingUnit *coreProcessingUnit) releasePendingEvents(engine *EventEngi
 	//for releasepending {
 	glog.Infof("Releasing pending event to NATS [%s].\n", processingUnit.stagename)
 	//readrange := EventrangeRocksDB{start, limit}
-	events, err := processingUnit.walstore.ReadRocksDBEntriesAll()
+	events, err := processingUnit.walstore.ReadAllListFromDB()
 	if err != nil {
 		return err
 	}
@@ -620,7 +620,7 @@ func (processingUnit *coreProcessingUnit) releasePendingEvents(engine *EventEngi
 		glog.Infof("Releasing pending event to NATS [%s]. Event key: %s of length:%d with sequence_id[%s]\n", processingUnit.stagename, ke, len(kv.Event), seq)
 		//if (len(ke) <= 0) || (strings.Compare(ke, " ") == 0) { //Not sure how this got in...serious bug introduced by GCM NON US
 		if len(ke) <= 0 {
-			processingUnit.walstore.DeletefromRocksDB(ke)
+			processingUnit.walstore.DeleteFromDB(ke)
 		} else {
 			if processingUnit.insequence && seq != "" {
 				err = processingUnit.publisher.PublishtoqueuegroupInSeq(kv.Event, seq)
@@ -647,8 +647,8 @@ GetEventsFromLocalPersistance - function to get events from local persistance
 */
 func (processingUnit *coreProcessingUnit) GetEventsFromLocalPersistance(count int) (map[int64]string, error) {
 	keys := make(map[int64]string)
-	readrange := EventrangeRocksDB{1, count}
-	events, err := processingUnit.walstore.ReadRocksDBonRange(readrange)
+	readrange := Eventrange{1, count}
+	events, err := processingUnit.walstore.ReadKeyRangeFromDB(readrange)
 	if err != nil {
 		return keys, err
 	}
@@ -694,7 +694,7 @@ func (processingUnit *coreProcessingUnit) Publishevents(events map[string]string
 		//generate key value to be stored in rocksdb and corresponding JSON data
 		//key := strconv.FormatInt((time.Now().UnixNano() / int64(time.Millisecond)), 10)
 		//store into Rocks DB
-		err := processingUnit.walstore.WritetoRocksDB(m, events[m])
+		err := processingUnit.walstore.WritetoDB(m, events[m])
 		if err != nil {
 			//need to log err and handle connection reset here
 			//resetrocksdb()
@@ -719,7 +719,7 @@ func (processingUnit *coreProcessingUnit) Publishevent(key string, event string)
 	//generate key value to be stored in rocksdb and corresponding JSON data
 	//key := strconv.FormatInt((time.Now().UnixNano() / int64(time.Millisecond)), 10)
 	//store into Rocks DB
-	err := processingUnit.walstore.WritetoRocksDB(key, event)
+	err := processingUnit.walstore.WritetoDB(key, event)
 	if err != nil {
 		//need to log err and handle connection reset here
 		//resetrocksdb()
@@ -742,7 +742,7 @@ func (processingUnit *coreProcessingUnit) PublisheventBatch(kv map[string]string
 	//generate key value to be stored in rocksdb and corresponding JSON data
 	//key := strconv.FormatInt((time.Now().UnixNano() / int64(time.Millisecond)), 10)
 	//store into Rocks DB
-	err := processingUnit.walstore.WriteBatchtoRocksDB(kv)
+	err := processingUnit.walstore.WriteBatchtoDB(kv)
 	if err != nil {
 		//need to log err and handle connection reset here
 		//resetrocksdb()
@@ -770,7 +770,7 @@ func (processingUnit *coreProcessingUnit) PublisheventInSEQ(key string, event st
 	//key := strconv.FormatInt((time.Now().UnixNano() / int64(time.Millisecond)), 10)
 	//store into Rocks DB
 	starttime := time.Now().UnixNano() / int64(time.Millisecond)
-	err := processingUnit.walstore.WritetoRocksDB(key, event)
+	err := processingUnit.walstore.WritetoDB(key, event)
 	glog.Infof("Time taken to save one OmegaEvent in WAL: %d", ((time.Now().UnixNano() / int64(time.Millisecond)) - starttime))
 	if err != nil {
 		//need to log err and handle connection reset here
@@ -800,7 +800,7 @@ func (processingUnit *coreProcessingUnit) PublisheventBatchInSEQ(kv map[string]s
 	//key := strconv.FormatInt((time.Now().UnixNano() / int64(time.Millisecond)), 10)
 	//store into Rocks DB
 	starttime := time.Now().UnixNano() / int64(time.Millisecond)
-	err := processingUnit.walstore.WriteBatchtoRocksDB(kv)
+	err := processingUnit.walstore.WriteBatchtoDB(kv)
 	glog.Infof("Time taken to save OmegaEvent in WAL: %d", ((time.Now().UnixNano() / int64(time.Millisecond)) - starttime))
 	if err != nil {
 		//need to log err and handle connection reset here
@@ -835,7 +835,7 @@ func (engine *EventEngine) HoldFlushAllEventsFromWAL() {
 			coreProcess := currentCoreEngine.processingUnit[processingUnit]
 			keepwaiting := true
 			for keepwaiting {
-				_, count, err := coreProcess.walstore.ReadRocksDBEntriesWithcount(10)
+				_, count, err := coreProcess.walstore.ReadListCountFromDB(10)
 				if err != nil {
 					glog.Infof("Failed retrieving events from WAL...", err)
 					keepwaiting = false

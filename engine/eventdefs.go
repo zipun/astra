@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"github.com/glog-master"
+	"github.com/golang/glog"
 )
 
 //Source type int to represent supported types

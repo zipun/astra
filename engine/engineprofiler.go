@@ -24,7 +24,7 @@ import (
 	*/
 	_ "net/http/pprof"
 
-	glog "github.com/glog-master"
+	glog "github.com/golang/glog"
 )
 
 //Profiler - struct used to schedule profiling for the event engine
