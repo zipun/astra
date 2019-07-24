@@ -30,7 +30,7 @@ func (s *EventDB) OpenDB() error{
   s.options.SyncWrites = true //This is turned on in default options however resetting this one up just incase
   s.eventDB, s.Err = db.Open(s.options)
   if s.Err != nil {
-	  glog.Fatal("Error creating badger database. Failed due to %s[%s]\n", s.Err, s.Datapath)
+	  glog.Fatalf("Error creating badger database. Failed due to %s[%s]\n", s.Err, s.Datapath)
     return s.Err
   }
   return nil

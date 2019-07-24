@@ -147,7 +147,7 @@ func (engine *EventEngine) startNatsServer() {
 				engine.NatsServer.HostName,
 				engine.NatsServer.EthName)
 			if engine.natsserver.StartNatsCore() {
-				engine.NatsServer.ServerURL = engine.natsserver.GetConnectionURL()
+				engine.NatsServer.ServerURL, _ = engine.natsserver.GetConnectionURL()
 				glog.Infoln("Embedded nats server started and running successfully")
 				glog.Infof("Server started with connection string %s", engine.NatsServer.ServerURL)
 			} else {
@@ -581,7 +581,7 @@ func (core *coreEngine) processNextStage(key string, event string, seq string, c
 				//process event for this stage
 				processingUnit := core.processingUnit[currentRoute.Nextstage.Stagename]
 				//var err error
-				glog.Infof("Processing unit [%s] with seq set to %b", processingUnit.stagename, processingUnit.insequence)
+				glog.Infof("Processing unit [%s] with seq set to %s", processingUnit.stagename, strconv.FormatBool(processingUnit.insequence))
 				if processingUnit.insequence && (seq != "") {
 					_, err = processingUnit.PublisheventInSEQ(key, event, seq)
 				} else {
@@ -837,7 +837,7 @@ func (engine *EventEngine) HoldFlushAllEventsFromWAL() {
 			for keepwaiting {
 				_, count, err := coreProcess.walstore.ReadListCountFromDB(10)
 				if err != nil {
-					glog.Infof("Failed retrieving events from WAL...", err)
+					glog.Infof("Failed retrieving events from WAL. Err: %s", err)
 					keepwaiting = false
 				} else {
 					if count != 0 {
@@ -925,7 +925,7 @@ func (engine *EventEngine) StartPublishAndThrottel(publishCB func(engine *EventE
 			count = 0
 		}
 	}
-	glog.Infof("Exiting out of start publish and not sure why? Current publishing status %b", engine.keeppublishing)
+	glog.Infof("Exiting out of start publish and not sure why? Current publishing status %s", strconv.FormatBool(engine.keeppublishing))
 }
 
 //HoldOnLoad - function to hold engine on overload

@@ -17,17 +17,57 @@ type NatsPublisher struct {
 	Configfilepath *string
 	Natserr        error
 	Name           string
+	Certfile       string
+	Keyfile 			 string
+	Cafile				 string
 }
 
 /*
-ConnectNats - function used to connect to NATS cluster
+ConnectNats - function used to connect NATS cluster
 */
 func (publisher *NatsPublisher) ConnectNats() error {
+	if len(publisher.Defaulturls) <=0 {
+		return errors.New("Nats url is required for making connection")
+	}
 	publisher.Natsconn, publisher.Natserr = nats.Connect(publisher.Defaulturls)
 	if publisher.Natserr != nil {
 		glog.Errorf("Error connecting to NATS server. Error: %s\n", publisher.Natserr)
 	}
 	return publisher.Natserr
+}
+
+/*
+SecureConnectNats - function used to connect NATS Securely
+*/
+func (publisher *NatsPublisher) SecureConnectNats(authorize bool) error {
+	if len(publisher.Defaulturls) <=0 {
+		return errors.New("Nats url is required for making connection")
+	}
+	if !authorize {
+		return publisher.genericTLSConnection()
+	} else {
+		return publisher.authorizedTLSConnection()
+	}
+	return nil
+}
+
+func (publisher *NatsPublisher) genericTLSConnection() error {
+	if len(publisher.Cafile) == 0 {
+		return errors.New("RootCA not be found. Hence cannot start NATS Secure.")
+	}
+	opt := nats.RootCAs(publisher.Cafile)
+	publisher.Natsconn, publisher.Natserr = nats.Connect(publisher.Defaulturls, opt)
+	if publisher.Natserr != nil {
+		glog.Errorf("Error connecting to NATS using tls. Err: %s\n", publisher.Natserr)
+	}
+	return publisher.Natserr
+}
+
+func (publisher *NatsPublisher) authorizedTLSConnection() error {
+	if (len(publisher.Certfile)<=0) || (len(publisher.Keyfile)<=0){
+		return errors.New("Certificate files not found, hence cannot start NATS Secure")
+	}
+	return nil
 }
 
 /*
@@ -57,12 +97,6 @@ func (publisher *NatsPublisher) Publishtoqueuegroup(data string) error {
 			return publisher.Natserr
 		}
 		//glog.Infof("Flushing event to server: %s\n", data)
-		/*
-			publisher.Natserr = publisher.Natsconn.Flush()
-			if publisher.Natserr != nil {
-				return publisher.Natserr
-			}
-		*/
 		return nil
 	}
 	return errors.New("failed to publish into queuegroup as the connection object has invalid reference")
@@ -84,14 +118,6 @@ func (publisher *NatsPublisher) PublishtoqueuegroupInSeq(data string, seq string
 		if publisher.Natserr != nil {
 			return publisher.Natserr
 		}
-		//glog.Infof("Flushing event to server: %s\n", data)
-		/*  Commented by JP as part of performance tuning
-		publisher.Natserr = publisher.Natsconn.Flush()
-		glog.Infof("Time taken to Flush one OmegaEvent to NATS PUB: %d", ((time.Now().UnixNano() / int64(time.Millisecond)) - starttime))
-		if publisher.Natserr != nil {
-			return publisher.Natserr
-		}
-		*/
 		return nil
 	}
 	return errors.New("failed to publish into queuegroup as the connection object has invalid reference")
